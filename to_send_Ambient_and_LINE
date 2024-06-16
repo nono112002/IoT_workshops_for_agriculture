@@ -1,0 +1,134 @@
+#include "M5AtomS3.h"
+#include "Adafruit_SHT4x.h"
+#include <Ambient.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+//#define BUTTON_PIN 41
+
+unsigned int channelId = 79031;
+const char* writeKey = "*******";
+const char* ssid = "*******"; // WiFi SSIDをここに入力
+const char* password = "*******"; // WiFiパスワードをここに入力
+const String token = "**********";//LINEトークンをここに入力
+
+WiFiClient client;
+Ambient ambient;
+
+Adafruit_SHT4x sht4 = Adafruit_SHT4x();
+
+
+void setup() {
+  M5.begin();
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    M5.Lcd.print("_");
+  }
+  if (ambient.begin(channelId, writeKey, &client)) {
+    M5.Lcd.println("Ambient connected successfully");
+  } else {
+    M5.Lcd.println("Failed to connect Ambient");
+  }
+  while (!Serial) delay(10);
+  Wire.begin(2, 1);  // I2Cのピン指定
+  if (!sht4.begin()) {
+    while (1) delay(1);
+  }
+  sht4.setPrecision(SHT4X_HIGH_PRECISION);
+  sht4.setHeater(SHT4X_NO_HEATER);
+}
+void loop() {
+  sensors_event_t humidity, temp;
+  sht4.getEvent(&humidity, &temp);
+
+  // AtomS3の画面にデータを表示
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.setTextSize(3);
+  M5.Lcd.print(temp.temperature);
+  M5.Lcd.println(" C");
+  M5.Lcd.print(humidity.relative_humidity);
+  M5.Lcd.println(" %");
+  //Ambient用に型を宣言
+  float tempfloat = temp.temperature;
+  float humifloat = humidity.relative_humidity;
+  send_to_Ambient(tempfloat,humifloat); 
+  //LINE用に型を宣言
+  String tempString = String(temp.temperature,1);
+  String humiString = String(humidity.relative_humidity, 1);
+  String message = "temp=" + tempString +"degree  Humi= " + humiString + "%";
+  send_to_LINE( message );
+
+  delay(1000*30);
+}
+
+void send_to_LINE(String message){
+  HTTPClient client;
+  String url = "https://notify-api.line.me/api/notify";
+  client.begin(url);
+  client.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  client.addHeader("Authorization", "Bearer " + token);
+
+  // メッセージをURLエンコード
+  String encodedMessage = urlencode(message);
+  String query = "message=" + encodedMessage;
+  int httpResponseCode = client.POST(query);
+
+   Serial.println(query);
+  if (httpResponseCode > 0) {
+    String response = client.getString();
+    Serial.println("Sent the message");
+    Serial.println(response);
+  } else {
+    Serial.print("Error on sending POST: ");
+    Serial.println(httpResponseCode);
+  }
+
+}
+
+void send_to_Ambient(float tempfloat,float humifloat){
+  ambient.set(1, tempfloat);
+  ambient.set(2, humifloat);
+  bool sendResult = ambient.send();
+  Serial.print("Temperature: "); Serial.print(tempfloat); Serial.println(" degrees C");
+  Serial.print("Humidity: "); Serial.print(humifloat); Serial.println("% rH");
+  if (sendResult) {
+    M5.Lcd.println("Data sent successfully");
+  } else {
+    M5.Lcd.println("Failed to send data");
+  }
+}
+
+// URLエンコード関数
+String urlencode(String str) {
+  String encodedString = "";
+  char c;
+  char code0;
+  char code1;
+  char code2;
+  for (int i = 0; i < str.length(); i++) {
+    c = str.charAt(i);
+    if (c == ' ') {
+      encodedString += '+';
+    } else if (isalnum(c)) {
+      encodedString += c;
+    } else {
+      code1 = (c & 0xf) + '0';
+      if ((c & 0xf) > 9) {
+        code1 = (c & 0xf) - 10 + 'A';
+      }
+      c = (c >> 4) & 0xf;
+      code0 = c + '0';
+      if (c > 9) {
+        code0 = c - 10 + 'A';
+      }
+      code2 = '\0';
+      encodedString += '%';
+      encodedString += code0;
+      encodedString += code1;
+    }
+  }
+  return encodedString;
+}
