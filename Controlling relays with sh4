@@ -1,0 +1,45 @@
+#include <M5AtomS3.h>
+#include "Adafruit_SHT4x.h"
+
+Adafruit_SHT4x sht4 = Adafruit_SHT4x();
+
+void setup() {
+  M5.begin();
+  M5.Lcd.setTextFont(2); // フォントサイズを設定
+  M5.Lcd.setTextColor(YELLOW, BLACK); // 背景とテキストのカラーを設定
+  pinMode(2, OUTPUT); // ピン2を出力モードに設定
+  set_sht4();
+}
+
+void loop(void) {
+  sensors_event_t humidity, temp;
+  sht4.getEvent(&humidity, &temp); // 温度と湿度のデータを取得
+  print_temperature(temp.temperature); // 温度を表示
+  control_relay(temp.temperature); // リレーを制御
+  delay(1000);
+}
+
+void control_relay(float temperature) {
+  if (temperature > 30) {
+    digitalWrite(2, HIGH); // 30度以上でリレーをオン
+  } else {
+    digitalWrite(2, LOW); // 30度以下でリレーをオフ
+  }
+}
+
+void set_sht4() {
+  Wire.begin(38, 39);  // I2Cのピン指定
+  if (!sht4.begin()) {
+    while (1) delay(1);
+  }
+  sht4.setPrecision(SHT4X_HIGH_PRECISION);
+  sht4.setHeater(SHT4X_NO_HEATER);
+}
+
+void print_temperature(float temperature) {
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.setTextSize(3);
+  M5.Lcd.print(temperature);
+  M5.Lcd.println(" C");
+}
